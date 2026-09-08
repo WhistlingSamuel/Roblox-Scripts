@@ -1,6 +1,6 @@
 --// CONNECTEYES TOOL HUB
 --// LocalScript
---// Reviewed + Fixed Compact Version
+--// Full Fixed Version
 --
 --// TOOLS
 --// 1. Super Cool Wrench
@@ -8,10 +8,12 @@
 --// 3. Fork3X
 --// 4. Blue Bucket
 --
---// Each tool has GET + AUTO-TP
+--// Each tool has:
+--// GET + AUTO-TP
 --
 --// ADMIN PADS
 --// 10 Pads
+--// TP + AUTO-TP
 --
 --// HD WHITELISTER
 --
@@ -19,6 +21,9 @@
 --// Mesh Hider
 --// Anti-Pause
 --// Wrench C Mover
+--
+--// X / CLOSE:
+--// Cancels all running systems and restores client changes
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -37,42 +42,46 @@ local BUCKET_ID = "25162389"
 local WRENCH_NAME = "super cool wrench"
 local BUILDING_NAME = "Building Tools"
 local FORK3X_NAME = "Fork3X"
-local BUCKET_NAME = "Blue Bucket"
 
 local MAX_ADMIN_PADS = 10
 
 local NORMAL_SIZE = UDim2.fromOffset(280, 330)
 local MINIMIZED_SIZE = UDim2.fromOffset(280, 30)
 
-local TOOL_AUTO_INTERVAL = 0.5
-local BUCKET_REQUEST_INTERVAL = 2
+--============================================================
+-- SHUTDOWN STATE
+--============================================================
+
+local HubClosed = false
+
+local Connections = {}
+
+local function AddConnection(Connection)
+    if Connection then
+        table.insert(Connections, Connection)
+    end
+    return Connection
+end
+
+local function DisconnectAll()
+    for _, Connection in ipairs(Connections) do
+        pcall(function()
+            Connection:Disconnect()
+        end)
+    end
+
+    table.clear(Connections)
+end
 
 --============================================================
 -- REMOVE OLD HUB
 --============================================================
 
-local OldHub =
-    PlayerGui:FindFirstChild(
-        "ConnectEyesToolHub"
-    )
+local OldHub = PlayerGui:FindFirstChild("ConnectEyesToolHub")
 
 if OldHub then
     OldHub:Destroy()
 end
-
---============================================================
--- CLEANUP VARIABLES
---============================================================
-
-local HubClosed = false
-
-local MainLoopConnection = nil
-local MeshWatcherConnection = nil
-
-local pauseConnection = nil
-local cFolderConnection = nil
-
-local CleanupHub = nil
 
 --============================================================
 -- REQUEST COMMAND
@@ -81,23 +90,16 @@ local CleanupHub = nil
 local RequestCommand = nil
 
 local HDAdminClient =
-    ReplicatedStorage:FindFirstChild(
-        "HDAdminClient"
-    )
+    ReplicatedStorage:FindFirstChild("HDAdminClient")
 
 if HDAdminClient then
 
     local Signals =
-        HDAdminClient:FindFirstChild(
-            "Signals"
-        )
+        HDAdminClient:FindFirstChild("Signals")
 
     if Signals then
-
         RequestCommand =
-            Signals:FindFirstChild(
-                "RequestCommand"
-            )
+            Signals:FindFirstChild("RequestCommand")
     end
 end
 
@@ -115,47 +117,40 @@ local function FindPart(Object)
         return Object
     end
 
-    if Object:IsA("Model") then
-
-        if Object.PrimaryPart then
-            return Object.PrimaryPart
-        end
+    if Object:IsA("Model") and Object.PrimaryPart then
+        return Object.PrimaryPart
     end
 
-    local Part =
-        Object:FindFirstChildWhichIsA(
-            "BasePart",
-            true
-        )
-
-    return Part
+    return Object:FindFirstChildWhichIsA(
+        "BasePart",
+        true
+    )
 end
 
 local function TeleportToPart(Part)
+
+    if HubClosed then
+        return false
+    end
 
     local Character =
         LocalPlayer.Character
 
     local Root =
         Character
-        and Character:FindFirstChild(
-            "HumanoidRootPart"
-        )
+        and Character:FindFirstChild("HumanoidRootPart")
 
     if not Root or not Part then
         return false
     end
 
-    local Success =
-        pcall(function()
+    return pcall(function()
 
-            Root.CFrame =
-                Part.CFrame +
-                Vector3.new(0, 3, 0)
+        Root.CFrame =
+            Part.CFrame +
+            Vector3.new(0, 3, 0)
 
-        end)
-
-    return Success
+    end)
 end
 
 --============================================================
@@ -171,14 +166,15 @@ local function FindDroppedTool(ToolName)
         workspace:GetDescendants()
     ) do
 
+        if HubClosed then
+            return nil
+        end
+
         if Object:IsA("Tool")
-        and Object.Name:lower()
-            == ToolName:lower() then
+        and Object.Name:lower() == ToolName:lower() then
 
             if not Character
-            or not Object:IsDescendantOf(
-                Character
-            ) then
+            or not Object:IsDescendantOf(Character) then
 
                 return Object
             end
@@ -190,70 +186,62 @@ end
 
 local function GetTool(ToolName)
 
+    if HubClosed then
+        return nil
+    end
+
     local Character =
         LocalPlayer.Character
 
-    -- Character
+    -- CHARACTER
     if Character then
 
         local Tool =
-            Character:FindFirstChild(
-                ToolName
-            )
+            Character:FindFirstChild(ToolName)
 
         if Tool and Tool:IsA("Tool") then
             return Tool
         end
 
-        -- Case-insensitive character search
         for _, Object in ipairs(
             Character:GetChildren()
         ) do
 
             if Object:IsA("Tool")
-            and Object.Name:lower()
-                == ToolName:lower() then
+            and Object.Name:lower() == ToolName:lower() then
 
                 return Object
             end
         end
     end
 
-    -- Backpack
+    -- BACKPACK
     local Backpack =
-        LocalPlayer:FindFirstChildOfClass(
-            "Backpack"
-        )
+        LocalPlayer:FindFirstChildOfClass("Backpack")
 
     if Backpack then
 
         local Tool =
-            Backpack:FindFirstChild(
-                ToolName
-            )
+            Backpack:FindFirstChild(ToolName)
 
         if Tool and Tool:IsA("Tool") then
             return Tool
         end
 
-        -- Case-insensitive backpack search
         for _, Object in ipairs(
             Backpack:GetChildren()
         ) do
 
             if Object:IsA("Tool")
-            and Object.Name:lower()
-                == ToolName:lower() then
+            and Object.Name:lower() == ToolName:lower() then
 
                 return Object
             end
         end
     end
 
-    -- Workspace
-    return FindDroppedTool(
-        ToolName
-    )
+    -- WORKSPACE
+    return FindDroppedTool(ToolName)
 end
 
 --============================================================
@@ -294,18 +282,10 @@ Main.Position =
     )
 
 Main.BackgroundColor3 =
-    Color3.fromRGB(
-        45,
-        45,
-        45
-    )
+    Color3.fromRGB(45, 45, 45)
 
 Main.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 Main.BorderSizePixel =
     2
@@ -324,26 +304,13 @@ local Top =
     Instance.new("Frame")
 
 Top.Size =
-    UDim2.new(
-        1,
-        0,
-        0,
-        30
-    )
+    UDim2.new(1, 0, 0, 30)
 
 Top.BackgroundColor3 =
-    Color3.fromRGB(
-        30,
-        30,
-        30
-    )
+    Color3.fromRGB(30, 30, 30)
 
 Top.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 Top.BorderSizePixel =
     1
@@ -358,17 +325,10 @@ local Logo =
     Instance.new("TextLabel")
 
 Logo.Size =
-    UDim2.fromOffset(
-        34,
-        30
-    )
+    UDim2.fromOffset(34, 30)
 
 Logo.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 Logo.BorderSizePixel =
     0
@@ -377,11 +337,7 @@ Logo.Text =
     "CE"
 
 Logo.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 Logo.Font =
     Enum.Font.SourceSansBold
@@ -396,18 +352,10 @@ local Title =
     Instance.new("TextLabel")
 
 Title.Position =
-    UDim2.fromOffset(
-        40,
-        0
-    )
+    UDim2.fromOffset(40, 0)
 
 Title.Size =
-    UDim2.new(
-        1,
-        -100,
-        1,
-        0
-    )
+    UDim2.new(1, -100, 1, 0)
 
 Title.BackgroundTransparency =
     1
@@ -416,11 +364,7 @@ Title.Text =
     "ConnectEyes Hub"
 
 Title.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 Title.Font =
     Enum.Font.SourceSans
@@ -435,32 +379,20 @@ Title.Parent =
     Top
 
 --============================================================
--- MINIMIZE BUTTON
+-- MINIMIZE
 --============================================================
 
 local Minimize =
     Instance.new("TextButton")
 
 Minimize.Position =
-    UDim2.new(
-        1,
-        -60,
-        0,
-        3
-    )
+    UDim2.new(1, -60, 0, 3)
 
 Minimize.Size =
-    UDim2.fromOffset(
-        25,
-        24
-    )
+    UDim2.fromOffset(25, 24)
 
 Minimize.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 Minimize.BorderSizePixel =
     0
@@ -469,11 +401,7 @@ Minimize.Text =
     "−"
 
 Minimize.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 Minimize.Font =
     Enum.Font.SourceSansBold
@@ -485,32 +413,20 @@ Minimize.Parent =
     Top
 
 --============================================================
--- CLOSE BUTTON
+-- CLOSE
 --============================================================
 
 local Close =
     Instance.new("TextButton")
 
 Close.Position =
-    UDim2.new(
-        1,
-        -30,
-        0,
-        3
-    )
+    UDim2.new(1, -30, 0, 3)
 
 Close.Size =
-    UDim2.fromOffset(
-        25,
-        24
-    )
+    UDim2.fromOffset(25, 24)
 
 Close.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 Close.BorderSizePixel =
     0
@@ -519,11 +435,7 @@ Close.Text =
     "X"
 
 Close.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 Close.Font =
     Enum.Font.SourceSansBold
@@ -542,18 +454,10 @@ local Tabs =
     Instance.new("Frame")
 
 Tabs.Position =
-    UDim2.fromOffset(
-        5,
-        35
-    )
+    UDim2.fromOffset(5, 35)
 
 Tabs.Size =
-    UDim2.new(
-        1,
-        -10,
-        0,
-        45
-    )
+    UDim2.new(1, -10, 0, 45)
 
 Tabs.BackgroundTransparency =
     1
@@ -561,40 +465,22 @@ Tabs.BackgroundTransparency =
 Tabs.Parent =
     Main
 
-local function CreateTab(
-    Text,
-    X,
-    Width
-)
+local function CreateTab(Text, X, Width)
 
     local Button =
         Instance.new("TextButton")
 
     Button.Position =
-        UDim2.fromOffset(
-            X,
-            0
-        )
+        UDim2.fromOffset(X, 0)
 
     Button.Size =
-        UDim2.fromOffset(
-            Width,
-            23
-        )
+        UDim2.fromOffset(Width, 23)
 
     Button.BackgroundColor3 =
-        Color3.fromRGB(
-            65,
-            65,
-            65
-        )
+        Color3.fromRGB(65, 65, 65)
 
     Button.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Button.BorderSizePixel =
         1
@@ -603,11 +489,7 @@ local function CreateTab(
         Text
 
     Button.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Button.Font =
         Enum.Font.SourceSans
@@ -622,32 +504,16 @@ local function CreateTab(
 end
 
 local ToolsTab =
-    CreateTab(
-        "Tools",
-        0,
-        63
-    )
+    CreateTab("Tools", 0, 63)
 
 local AdminTab =
-    CreateTab(
-        "Admin",
-        66,
-        63
-    )
+    CreateTab("Admin", 66, 63)
 
 local HDTab =
-    CreateTab(
-        "HD",
-        132,
-        63
-    )
+    CreateTab("HD", 132, 63)
 
 local ClientTab =
-    CreateTab(
-        "Client",
-        198,
-        63
-    )
+    CreateTab("Client", 198, 63)
 
 --============================================================
 -- PAGES
@@ -661,32 +527,16 @@ local function CreatePage()
         Instance.new("Frame")
 
     Page.Position =
-        UDim2.fromOffset(
-            5,
-            85
-        )
+        UDim2.fromOffset(5, 85)
 
     Page.Size =
-        UDim2.new(
-            1,
-            -10,
-            1,
-            -90
-        )
+        UDim2.new(1, -10, 1, -90)
 
     Page.BackgroundColor3 =
-        Color3.fromRGB(
-            35,
-            35,
-            35
-        )
+        Color3.fromRGB(35, 35, 35)
 
     Page.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Page.BorderSizePixel =
         1
@@ -697,10 +547,7 @@ local function CreatePage()
     Page.Parent =
         Main
 
-    table.insert(
-        Pages,
-        Page
-    )
+    table.insert(Pages, Page)
 
     return Page
 end
@@ -726,6 +573,10 @@ local CurrentPage = ToolsPage
 
 local function ShowPage(Page)
 
+    if HubClosed then
+        return
+    end
+
     CurrentPage =
         Page
 
@@ -738,35 +589,31 @@ local function ShowPage(Page)
     end
 end
 
-ToolsTab.MouseButton1Click:Connect(
-    function()
-        ShowPage(ToolsPage)
-    end
-)
+AddConnection(ToolsTab.MouseButton1Click:Connect(function()
+    ShowPage(ToolsPage)
+end))
 
-AdminTab.MouseButton1Click:Connect(
-    function()
-        ShowPage(AdminPage)
-    end
-)
+AddConnection(AdminTab.MouseButton1Click:Connect(function()
+    ShowPage(AdminPage)
+end))
 
-HDTab.MouseButton1Click:Connect(
-    function()
-        ShowPage(HDPage)
-    end
-)
+AddConnection(HDTab.MouseButton1Click:Connect(function()
+    ShowPage(HDPage)
+end))
 
-ClientTab.MouseButton1Click:Connect(
-    function()
-        ShowPage(ClientPage)
-    end
-)
+AddConnection(ClientTab.MouseButton1Click:Connect(function()
+    ShowPage(ClientPage)
+end))
 
 --============================================================
 -- MINIMIZE SYSTEM
 --============================================================
 
 local function SetMinimized(Value)
+
+    if HubClosed then
+        return
+    end
 
     Minimized =
         Value
@@ -777,8 +624,7 @@ local function SetMinimized(Value)
             false
 
         for _, Page in ipairs(Pages) do
-            Page.Visible =
-                false
+            Page.Visible = false
         end
 
         Main.Size =
@@ -796,13 +642,11 @@ local function SetMinimized(Value)
             true
 
         for _, Page in ipairs(Pages) do
-            Page.Visible =
-                false
+            Page.Visible = false
         end
 
         if CurrentPage then
-            CurrentPage.Visible =
-                true
+            CurrentPage.Visible = true
         end
 
         Minimize.Text =
@@ -810,15 +654,9 @@ local function SetMinimized(Value)
     end
 end
 
-Minimize.MouseButton1Click:Connect(
-    function()
-
-        SetMinimized(
-            not Minimized
-        )
-
-    end
-)
+AddConnection(Minimize.MouseButton1Click:Connect(function()
+    SetMinimized(not Minimized)
+end))
 
 --============================================================
 -- DRAGGING
@@ -828,67 +666,58 @@ local Dragging = false
 local DragStart
 local StartPos
 
-Top.InputBegan:Connect(
-    function(Input)
+AddConnection(Top.InputBegan:Connect(function(Input)
 
-        if Input.UserInputType ==
-            Enum.UserInputType.MouseButton1
+    if HubClosed then
+        return
+    end
 
-        or Input.UserInputType ==
-            Enum.UserInputType.Touch then
+    if Input.UserInputType ==
+        Enum.UserInputType.MouseButton1
 
-            Dragging =
-                true
+    or Input.UserInputType ==
+        Enum.UserInputType.Touch then
 
-            DragStart =
-                Input.Position
+        Dragging = true
+        DragStart = Input.Position
+        StartPos = Main.Position
 
-            StartPos =
-                Main.Position
+        AddConnection(Input.Changed:Connect(function()
 
-            Input.Changed:Connect(
-                function()
+            if Input.UserInputState ==
+                Enum.UserInputState.End then
 
-                    if Input.UserInputState ==
-                        Enum.UserInputState.End then
+                Dragging = false
+            end
+        end))
+    end
+end))
 
-                        Dragging =
-                            false
-                    end
-                end
+AddConnection(UIS.InputChanged:Connect(function(Input)
+
+    if HubClosed or not Dragging then
+        return
+    end
+
+    if Input.UserInputType ==
+        Enum.UserInputType.MouseMovement
+
+    or Input.UserInputType ==
+        Enum.UserInputType.Touch then
+
+        local Delta =
+            Input.Position - DragStart
+
+        Main.Position =
+            UDim2.new(
+                StartPos.X.Scale,
+                StartPos.X.Offset + Delta.X,
+
+                StartPos.Y.Scale,
+                StartPos.Y.Offset + Delta.Y
             )
-        end
     end
-)
-
-UIS.InputChanged:Connect(
-    function(Input)
-
-        if not Dragging then
-            return
-        end
-
-        if Input.UserInputType ==
-            Enum.UserInputType.MouseMovement
-
-        or Input.UserInputType ==
-            Enum.UserInputType.Touch then
-
-            local Delta =
-                Input.Position -
-                DragStart
-
-            Main.Position =
-                UDim2.new(
-                    StartPos.X.Scale,
-                    StartPos.X.Offset + Delta.X,
-
-                    StartPos.Y.Scale,
-                    StartPos.Y.Offset + Delta.Y
-                )
-        end
-    end
-)
+end))
 
 --============================================================
 -- TOOLS PAGE
@@ -898,18 +727,10 @@ local ToolsTitle =
     Instance.new("TextLabel")
 
 ToolsTitle.Position =
-    UDim2.fromOffset(
-        8,
-        7
-    )
+    UDim2.fromOffset(8, 7)
 
 ToolsTitle.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        22
-    )
+    UDim2.new(1, -16, 0, 22)
 
 ToolsTitle.BackgroundTransparency =
     1
@@ -918,11 +739,7 @@ ToolsTitle.Text =
     "Tools"
 
 ToolsTitle.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 ToolsTitle.Font =
     Enum.Font.SourceSansBold
@@ -940,18 +757,10 @@ local ToolsInfo =
     Instance.new("TextLabel")
 
 ToolsInfo.Position =
-    UDim2.fromOffset(
-        8,
-        28
-    )
+    UDim2.fromOffset(8, 28)
 
 ToolsInfo.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        18
-    )
+    UDim2.new(1, -16, 0, 18)
 
 ToolsInfo.BackgroundTransparency =
     1
@@ -960,11 +769,7 @@ ToolsInfo.Text =
     "Tool availability"
 
 ToolsInfo.TextColor3 =
-    Color3.fromRGB(
-        180,
-        180,
-        180
-    )
+    Color3.fromRGB(180, 180, 180)
 
 ToolsInfo.Font =
     Enum.Font.SourceSans
@@ -982,10 +787,7 @@ ToolsInfo.Parent =
 -- TOOL ROW CREATOR
 --============================================================
 
-local function CreateToolRow(
-    Index,
-    DisplayName
-)
+local function CreateToolRow(Index, DisplayName)
 
     local Row =
         Instance.new("Frame")
@@ -997,26 +799,13 @@ local function CreateToolRow(
         )
 
     Row.Size =
-        UDim2.new(
-            1,
-            -16,
-            0,
-            42
-        )
+        UDim2.new(1, -16, 0, 42)
 
     Row.BackgroundColor3 =
-        Color3.fromRGB(
-            45,
-            45,
-            45
-        )
+        Color3.fromRGB(45, 45, 45)
 
     Row.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Row.BorderSizePixel =
         1
@@ -1028,18 +817,10 @@ local function CreateToolRow(
         Instance.new("TextLabel")
 
     Name.Position =
-        UDim2.fromOffset(
-            7,
-            2
-        )
+        UDim2.fromOffset(7, 2)
 
     Name.Size =
-        UDim2.new(
-            1,
-            -150,
-            0,
-            18
-        )
+        UDim2.new(1, -145, 0, 18)
 
     Name.BackgroundTransparency =
         1
@@ -1048,11 +829,7 @@ local function CreateToolRow(
         DisplayName
 
     Name.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Name.Font =
         Enum.Font.SourceSansBold
@@ -1070,31 +847,21 @@ local function CreateToolRow(
         Instance.new("TextLabel")
 
     Status.Position =
-        UDim2.fromOffset(
-            7,
-            21
-        )
+        UDim2.fromOffset(7, 21)
 
     Status.Size =
-        UDim2.new(
-            1,
-            -150,
-            0,
-            15
-        )
+        UDim2.new(1, -145, 0, 15)
 
     Status.BackgroundTransparency =
         1
 
+    -- IMPORTANT:
+    -- No "CHECKING..." anymore.
     Status.Text =
-        "CHECKING..."
+        "NOT FOUND"
 
     Status.TextColor3 =
-        Color3.fromRGB(
-            180,
-            180,
-            180
-        )
+        Color3.fromRGB(170, 170, 170)
 
     Status.Font =
         Enum.Font.SourceSans
@@ -1108,47 +875,27 @@ local function CreateToolRow(
     Status.Parent =
         Row
 
-    -- GET
+    -- GET BUTTON
     local Get =
         Instance.new("TextButton")
 
     Get.Position =
-        UDim2.new(
-            1,
-            -145,
-            0,
-            4
-        )
+        UDim2.new(1, -138, 0, 4)
 
     Get.Size =
-        UDim2.fromOffset(
-            68,
-            34
-        )
+        UDim2.fromOffset(60, 34)
 
     Get.BackgroundColor3 =
-        Color3.fromRGB(
-            70,
-            70,
-            70
-        )
+        Color3.fromRGB(70, 70, 70)
 
     Get.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Get.Text =
         "GET"
 
     Get.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Get.Font =
         Enum.Font.SourceSansBold
@@ -1159,47 +906,27 @@ local function CreateToolRow(
     Get.Parent =
         Row
 
-    -- AUTO
+    -- AUTO-TP BUTTON
     local Auto =
         Instance.new("TextButton")
 
     Auto.Position =
-        UDim2.new(
-            1,
-            -72,
-            0,
-            4
-        )
+        UDim2.new(1, -73, 0, 4)
 
     Auto.Size =
-        UDim2.fromOffset(
-            68,
-            34
-        )
+        UDim2.fromOffset(65, 34)
 
     Auto.BackgroundColor3 =
-        Color3.fromRGB(
-            70,
-            70,
-            70
-        )
+        Color3.fromRGB(70, 70, 70)
 
     Auto.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Auto.Text =
-        "AUTO: OFF"
+        "AUTO OFF"
 
     Auto.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Auto.Font =
         Enum.Font.SourceSansBold
@@ -1216,10 +943,8 @@ local function CreateToolRow(
         Status = Status,
         Get = Get,
         Auto = Auto,
-
         AutoEnabled = false,
-        LastTP = 0,
-        LastRequest = 0
+        LastTP = 0
     }
 end
 
@@ -1247,36 +972,38 @@ local BucketRow =
         "Blue Bucket"
     )
 
+local ToolRows = {
+    {
+        Row = WrenchRow,
+        ToolName = WRENCH_NAME,
+        Label = "Super Cool Wrench"
+    },
+    {
+        Row = BuildingRow,
+        ToolName = BUILDING_NAME,
+        Label = "Building Tools"
+    },
+    {
+        Row = ForkRow,
+        ToolName = FORK3X_NAME,
+        Label = "Fork3X"
+    }
+}
+
 local ToolsStatus =
     Instance.new("TextLabel")
 
 ToolsStatus.Position =
-    UDim2.fromOffset(
-        8,
-        244
-    )
+    UDim2.fromOffset(8, 244)
 
 ToolsStatus.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        35
-    )
+    UDim2.new(1, -16, 0, 35)
 
 ToolsStatus.BackgroundColor3 =
-    Color3.fromRGB(
-        20,
-        20,
-        20
-    )
+    Color3.fromRGB(20, 20, 20)
 
 ToolsStatus.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 ToolsStatus.BorderSizePixel =
     1
@@ -1285,11 +1012,7 @@ ToolsStatus.Text =
     "Ready."
 
 ToolsStatus.TextColor3 =
-    Color3.fromRGB(
-        190,
-        190,
-        190
-    )
+    Color3.fromRGB(190, 190, 190)
 
 ToolsStatus.Font =
     Enum.Font.SourceSans
@@ -1307,12 +1030,9 @@ ToolsStatus.Parent =
 -- TOOL TELEPORT
 --============================================================
 
-local function TeleportToolToPlayer(
-    Tool,
-    Label
-)
+local function TeleportToolToPlayer(Tool, Label)
 
-    if not Tool then
+    if HubClosed or not Tool then
         return false
     end
 
@@ -1333,9 +1053,7 @@ local function TeleportToolToPlayer(
         return false
     end
 
-    if Tool:IsDescendantOf(
-        LocalPlayer
-    ) then
+    if Tool:IsDescendantOf(LocalPlayer) then
 
         ToolsStatus.Text =
             Label ..
@@ -1358,11 +1076,7 @@ local function TeleportToolToPlayer(
 
                 Handle.CFrame =
                     Root.CFrame +
-                    Vector3.new(
-                        0,
-                        3,
-                        0
-                    )
+                    Vector3.new(0, 3, 0)
 
             end)
 
@@ -1389,11 +1103,7 @@ local function TeleportToolToPlayer(
 
                 Part.CFrame =
                     Root.CFrame +
-                    Vector3.new(
-                        0,
-                        3,
-                        0
-                    )
+                    Vector3.new(0, 3, 0)
 
             end)
 
@@ -1414,10 +1124,11 @@ local function TeleportToolToPlayer(
     return false
 end
 
-local function ActivateTool(
-    ToolName,
-    Label
-)
+local function ActivateTool(ToolName, Label)
+
+    if HubClosed then
+        return nil
+    end
 
     ToolsStatus.Text =
         "Searching for " ..
@@ -1445,73 +1156,10 @@ local function ActivateTool(
 end
 
 --============================================================
--- TOOL DATA
+-- TOOL GET BUTTONS
 --============================================================
 
-local ToolRows = {
-
-    {
-        Row = WrenchRow,
-        ToolName = WRENCH_NAME,
-        Label = "Super Cool Wrench"
-    },
-
-    {
-        Row = BuildingRow,
-        ToolName = BUILDING_NAME,
-        Label = "Building Tools"
-    },
-
-    {
-        Row = ForkRow,
-        ToolName = FORK3X_NAME,
-        Label = "Fork3X"
-    },
-
-    {
-        Row = BucketRow,
-        ToolName = BUCKET_NAME,
-        Label = "Blue Bucket"
-    }
-}
-
---============================================================
--- TOOL AUTO SYSTEM
---============================================================
-
-local function SetToolAuto(
-    Data,
-    Enabled
-)
-
-    Data.Row.AutoEnabled =
-        Enabled
-
-    if Enabled then
-
-        Data.Row.Auto.Text =
-            "AUTO: ON"
-
-        ToolsStatus.Text =
-            Data.Label ..
-            " Auto-TP enabled."
-
-    else
-
-        Data.Row.Auto.Text =
-            "AUTO: OFF"
-
-        ToolsStatus.Text =
-            Data.Label ..
-            " Auto-TP disabled."
-    end
-end
-
---============================================================
--- NORMAL GET BUTTONS
---============================================================
-
-WrenchRow.Get.MouseButton1Click:Connect(
+AddConnection(WrenchRow.Get.MouseButton1Click:Connect(
     function()
 
         ActivateTool(
@@ -1520,9 +1168,9 @@ WrenchRow.Get.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
-BuildingRow.Get.MouseButton1Click:Connect(
+AddConnection(BuildingRow.Get.MouseButton1Click:Connect(
     function()
 
         ActivateTool(
@@ -1531,9 +1179,9 @@ BuildingRow.Get.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
-ForkRow.Get.MouseButton1Click:Connect(
+AddConnection(ForkRow.Get.MouseButton1Click:Connect(
     function()
 
         ActivateTool(
@@ -1542,14 +1190,18 @@ ForkRow.Get.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
 --============================================================
 -- BLUE BUCKET GET
 --============================================================
 
-BucketRow.Get.MouseButton1Click:Connect(
+AddConnection(BucketRow.Get.MouseButton1Click:Connect(
     function()
+
+        if HubClosed then
+            return
+        end
 
         if not RequestCommand then
 
@@ -1584,26 +1236,130 @@ BucketRow.Get.MouseButton1Click:Connect(
                 "Bucket command failed."
         end
     end
+))
+
+--============================================================
+-- TOOL AUTO-TP
+--============================================================
+
+local function ToggleToolAuto(
+    Data,
+    ToolName,
+    Label
 )
 
---============================================================
--- AUTO BUTTONS
---============================================================
+    Data.AutoEnabled =
+        not Data.AutoEnabled
 
-for _, Data in ipairs(
-    ToolRows
-) do
+    if Data.AutoEnabled then
 
-    Data.Row.Auto.MouseButton1Click:Connect(
-        function()
+        Data.Auto.Text =
+            "AUTO ON"
 
-            SetToolAuto(
-                Data,
-                not Data.Row.AutoEnabled
-            )
+    else
 
+        Data.Auto.Text =
+            "AUTO OFF"
+    end
+end
+
+AddConnection(WrenchRow.Auto.MouseButton1Click:Connect(
+    function()
+        ToggleToolAuto(
+            WrenchRow,
+            WRENCH_NAME,
+            "Super Cool Wrench"
+        )
+    end
+))
+
+AddConnection(BuildingRow.Auto.MouseButton1Click:Connect(
+    function()
+        ToggleToolAuto(
+            BuildingRow,
+            BUILDING_NAME,
+            "Building Tools"
+        )
+    end
+))
+
+AddConnection(ForkRow.Auto.MouseButton1Click:Connect(
+    function()
+        ToggleToolAuto(
+            ForkRow,
+            FORK3X_NAME,
+            "Fork3X"
+        )
+    end)
+)
+
+AddConnection(BucketRow.Auto.MouseButton1Click:Connect(
+    function()
+
+        BucketRow.AutoEnabled =
+            not BucketRow.AutoEnabled
+
+        if BucketRow.AutoEnabled then
+
+            BucketRow.Auto.Text =
+                "AUTO ON"
+
+        else
+
+            BucketRow.Auto.Text =
+                "AUTO OFF"
         end
-    )
+    end
+))
+
+--============================================================
+-- TOOL AVAILABILITY
+--============================================================
+
+local function UpdateToolAvailability()
+
+    if HubClosed then
+        return
+    end
+
+    local Wrench =
+        GetTool(WRENCH_NAME)
+
+    local Building =
+        GetTool(BUILDING_NAME)
+
+    local Fork3X =
+        GetTool(FORK3X_NAME)
+
+    if Wrench then
+        WrenchRow.Status.Text =
+            "FOUND"
+    else
+        WrenchRow.Status.Text =
+            "NOT FOUND"
+    end
+
+    if Building then
+        BuildingRow.Status.Text =
+            "FOUND"
+    else
+        BuildingRow.Status.Text =
+            "NOT FOUND"
+    end
+
+    if Fork3X then
+        ForkRow.Status.Text =
+            "FOUND"
+    else
+        ForkRow.Status.Text =
+            "NOT FOUND"
+    end
+
+    BucketRow.Status.Text =
+        "HD GEAR"
+
+    ToolsInfo.Text =
+        "Wrench • BTools • Fork3X • Bucket"
 end
 
 --============================================================
@@ -1614,18 +1370,10 @@ local AdminTitle =
     Instance.new("TextLabel")
 
 AdminTitle.Position =
-    UDim2.fromOffset(
-        8,
-        7
-    )
+    UDim2.fromOffset(8, 7)
 
 AdminTitle.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        22
-    )
+    UDim2.new(1, -16, 0, 22)
 
 AdminTitle.BackgroundTransparency =
     1
@@ -1634,11 +1382,7 @@ AdminTitle.Text =
     "Admin Pads"
 
 AdminTitle.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 AdminTitle.Font =
     Enum.Font.SourceSansBold
@@ -1656,31 +1400,19 @@ local AdminInfo =
     Instance.new("TextLabel")
 
 AdminInfo.Position =
-    UDim2.fromOffset(
-        8,
-        29
-    )
+    UDim2.fromOffset(8, 29)
 
 AdminInfo.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        20
-    )
+    UDim2.new(1, -16, 0, 20)
 
 AdminInfo.BackgroundTransparency =
     1
 
 AdminInfo.Text =
-    "Scanning..."
+    "0/10 FOUND"
 
 AdminInfo.TextColor3 =
-    Color3.fromRGB(
-        180,
-        180,
-        180
-    )
+    Color3.fromRGB(180, 180, 180)
 
 AdminInfo.Font =
     Enum.Font.SourceSans
@@ -1698,18 +1430,10 @@ local AdminScroll =
     Instance.new("ScrollingFrame")
 
 AdminScroll.Position =
-    UDim2.fromOffset(
-        5,
-        52
-    )
+    UDim2.fromOffset(5, 52)
 
 AdminScroll.Size =
-    UDim2.new(
-        1,
-        -10,
-        1,
-        -57
-    )
+    UDim2.new(1, -10, 1, -57)
 
 AdminScroll.BackgroundTransparency =
     1
@@ -1752,26 +1476,13 @@ for i = 1, MAX_ADMIN_PADS do
         )
 
     Row.Size =
-        UDim2.new(
-            1,
-            -8,
-            0,
-            43
-        )
+        UDim2.new(1, -8, 0, 43)
 
     Row.BackgroundColor3 =
-        Color3.fromRGB(
-            45,
-            45,
-            45
-        )
+        Color3.fromRGB(45, 45, 45)
 
     Row.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Row.BorderSizePixel =
         1
@@ -1783,16 +1494,10 @@ for i = 1, MAX_ADMIN_PADS do
         Instance.new("TextLabel")
 
     Name.Position =
-        UDim2.fromOffset(
-            6,
-            1
-        )
+        UDim2.fromOffset(6, 1)
 
     Name.Size =
-        UDim2.fromOffset(
-            65,
-            18
-        )
+        UDim2.fromOffset(65, 18)
 
     Name.BackgroundTransparency =
         1
@@ -1801,11 +1506,7 @@ for i = 1, MAX_ADMIN_PADS do
         "Pad " .. i
 
     Name.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Name.Font =
         Enum.Font.SourceSansBold
@@ -1823,18 +1524,10 @@ for i = 1, MAX_ADMIN_PADS do
         Instance.new("TextLabel")
 
     Status.Position =
-        UDim2.fromOffset(
-            6,
-            20
-        )
+        UDim2.fromOffset(6, 20)
 
     Status.Size =
-        UDim2.new(
-            1,
-            -100,
-            0,
-            17
-        )
+        UDim2.new(1, -100, 0, 17)
 
     Status.BackgroundTransparency =
         1
@@ -1843,11 +1536,7 @@ for i = 1, MAX_ADMIN_PADS do
         "NOT FOUND"
 
     Status.TextColor3 =
-        Color3.fromRGB(
-            170,
-            170,
-            170
-        )
+        Color3.fromRGB(170, 170, 170)
 
     Status.Font =
         Enum.Font.SourceSans
@@ -1865,42 +1554,22 @@ for i = 1, MAX_ADMIN_PADS do
         Instance.new("TextButton")
 
     TP.Position =
-        UDim2.new(
-            1,
-            -78,
-            0,
-            4
-        )
+        UDim2.new(1, -78, 0, 4)
 
     TP.Size =
-        UDim2.fromOffset(
-            34,
-            34
-        )
+        UDim2.fromOffset(34, 34)
 
     TP.BackgroundColor3 =
-        Color3.fromRGB(
-            70,
-            70,
-            70
-        )
+        Color3.fromRGB(70, 70, 70)
 
     TP.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     TP.Text =
         "TP"
 
     TP.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     TP.Font =
         Enum.Font.SourceSansBold
@@ -1915,42 +1584,22 @@ for i = 1, MAX_ADMIN_PADS do
         Instance.new("TextButton")
 
     Auto.Position =
-        UDim2.new(
-            1,
-            -40,
-            0,
-            4
-        )
+        UDim2.new(1, -40, 0, 4)
 
     Auto.Size =
-        UDim2.fromOffset(
-            34,
-            34
-        )
+        UDim2.fromOffset(34, 34)
 
     Auto.BackgroundColor3 =
-        Color3.fromRGB(
-            70,
-            70,
-            70
-        )
+        Color3.fromRGB(70, 70, 70)
 
     Auto.BorderColor3 =
-        Color3.fromRGB(
-            0,
-            0,
-            0
-        )
+        Color3.fromRGB(0, 0, 0)
 
     Auto.Text =
         "OFF"
 
     Auto.TextColor3 =
-        Color3.new(
-            1,
-            1,
-            1
-        )
+        Color3.new(1, 1, 1)
 
     Auto.Font =
         Enum.Font.SourceSansBold
@@ -1962,7 +1611,6 @@ for i = 1, MAX_ADMIN_PADS do
         Row
 
     AdminRows[i] = {
-
         Row = Row,
         Name = Name,
         Status = Status,
@@ -1998,6 +1646,10 @@ local function GetAdminGivers()
         WrenchObjs:GetDescendants()
     ) do
 
+        if HubClosed then
+            return Results
+        end
+
         if Object.Name:lower() ==
             "admingiver" then
 
@@ -2012,6 +1664,10 @@ local function GetAdminGivers()
 end
 
 local function RefreshAdminPads()
+
+    if HubClosed then
+        return
+    end
 
     local Givers =
         GetAdminGivers()
@@ -2030,11 +1686,10 @@ local function RefreshAdminPads()
         Data.Part =
             FindPart(Giver)
 
-        if Giver
-        and Data.Part then
+        if Giver and Data.Part then
 
             Data.Status.Text =
-                "AVAILABLE"
+                "FOUND"
 
         elseif Giver then
 
@@ -2049,7 +1704,7 @@ local function RefreshAdminPads()
     end
 
     AdminInfo.Text =
-        "Found " ..
+        "FOUND " ..
         math.min(
             #Givers,
             MAX_ADMIN_PADS
@@ -2067,8 +1722,12 @@ for i = 1, MAX_ADMIN_PADS do
     local Data =
         AdminRows[i]
 
-    Data.TP.MouseButton1Click:Connect(
+    AddConnection(Data.TP.MouseButton1Click:Connect(
         function()
+
+            if HubClosed then
+                return
+            end
 
             if Data.Part then
 
@@ -2083,13 +1742,17 @@ for i = 1, MAX_ADMIN_PADS do
             else
 
                 Data.Status.Text =
-                    "NO PART"
+                    "NOT FOUND"
             end
         end
-    )
+    ))
 
-    Data.Auto.MouseButton1Click:Connect(
+    AddConnection(Data.Auto.MouseButton1Click:Connect(
         function()
+
+            if HubClosed then
+                return
+            end
 
             Data.AutoEnabled =
                 not Data.AutoEnabled
@@ -2105,7 +1768,7 @@ for i = 1, MAX_ADMIN_PADS do
                     "OFF"
             end
         end
-    )
+    ))
 end
 
 --============================================================
@@ -2116,18 +1779,10 @@ local HDTitle =
     Instance.new("TextLabel")
 
 HDTitle.Position =
-    UDim2.fromOffset(
-        8,
-        7
-    )
+    UDim2.fromOffset(8, 7)
 
 HDTitle.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        22
-    )
+    UDim2.new(1, -16, 0, 22)
 
 HDTitle.BackgroundTransparency =
     1
@@ -2136,11 +1791,7 @@ HDTitle.Text =
     "HD Whitelister"
 
 HDTitle.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 HDTitle.Font =
     Enum.Font.SourceSansBold
@@ -2158,16 +1809,10 @@ local PrefixLabel =
     Instance.new("TextLabel")
 
 PrefixLabel.Position =
-    UDim2.fromOffset(
-        8,
-        40
-    )
+    UDim2.fromOffset(8, 40)
 
 PrefixLabel.Size =
-    UDim2.fromOffset(
-        48,
-        22
-    )
+    UDim2.fromOffset(48, 22)
 
 PrefixLabel.BackgroundTransparency =
     1
@@ -2176,11 +1821,7 @@ PrefixLabel.Text =
     "Prefix:"
 
 PrefixLabel.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 PrefixLabel.Font =
     Enum.Font.SourceSans
@@ -2198,39 +1839,19 @@ local Prefix =
     Instance.new("TextBox")
 
 Prefix.Position =
-    UDim2.fromOffset(
-        60,
-        39
-    )
+    UDim2.fromOffset(60, 39)
 
 Prefix.Size =
-    UDim2.new(
-        1,
-        -68,
-        0,
-        23
-    )
+    UDim2.new(1, -68, 0, 23)
 
 Prefix.BackgroundColor3 =
-    Color3.fromRGB(
-        25,
-        25,
-        25
-    )
+    Color3.fromRGB(25, 25, 25)
 
 Prefix.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 Prefix.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 Prefix.Text =
     ";"
@@ -2251,16 +1872,10 @@ local GearLabel =
     Instance.new("TextLabel")
 
 GearLabel.Position =
-    UDim2.fromOffset(
-        8,
-        70
-    )
+    UDim2.fromOffset(8, 70)
 
 GearLabel.Size =
-    UDim2.fromOffset(
-        48,
-        22
-    )
+    UDim2.fromOffset(48, 22)
 
 GearLabel.BackgroundTransparency =
     1
@@ -2269,11 +1884,7 @@ GearLabel.Text =
     "Gear ID:"
 
 GearLabel.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 GearLabel.Font =
     Enum.Font.SourceSans
@@ -2291,39 +1902,19 @@ local GearID =
     Instance.new("TextBox")
 
 GearID.Position =
-    UDim2.fromOffset(
-        60,
-        69
-    )
+    UDim2.fromOffset(60, 69)
 
 GearID.Size =
-    UDim2.new(
-        1,
-        -68,
-        0,
-        23
-    )
+    UDim2.new(1, -68, 0, 23)
 
 GearID.BackgroundColor3 =
-    Color3.fromRGB(
-        25,
-        25,
-        25
-    )
+    Color3.fromRGB(25, 25, 25)
 
 GearID.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 GearID.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 GearID.PlaceholderText =
     "Gear ID"
@@ -2347,42 +1938,22 @@ local MakeButton =
     Instance.new("TextButton")
 
 MakeButton.Position =
-    UDim2.fromOffset(
-        8,
-        100
-    )
+    UDim2.fromOffset(8, 100)
 
 MakeButton.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        34
-    )
+    UDim2.new(1, -16, 0, 34)
 
 MakeButton.BackgroundColor3 =
-    Color3.fromRGB(
-        70,
-        70,
-        70
-    )
+    Color3.fromRGB(70, 70, 70)
 
 MakeButton.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 MakeButton.Text =
     "MAKE GEAR"
 
 MakeButton.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 MakeButton.Font =
     Enum.Font.SourceSansBold
@@ -2397,42 +1968,22 @@ local Processing =
     Instance.new("TextLabel")
 
 Processing.Position =
-    UDim2.fromOffset(
-        8,
-        142
-    )
+    UDim2.fromOffset(8, 142)
 
 Processing.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        34
-    )
+    UDim2.new(1, -16, 0, 34)
 
 Processing.BackgroundColor3 =
-    Color3.fromRGB(
-        20,
-        20,
-        20
-    )
+    Color3.fromRGB(20, 20, 20)
 
 Processing.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 Processing.Text =
     ""
 
 Processing.TextColor3 =
-    Color3.fromRGB(
-        190,
-        190,
-        190
-    )
+    Color3.fromRGB(190, 190, 190)
 
 Processing.Font =
     Enum.Font.SourceSans
@@ -2443,8 +1994,12 @@ Processing.TextSize =
 Processing.Parent =
     HDPage
 
-MakeButton.MouseButton1Click:Connect(
+AddConnection(MakeButton.MouseButton1Click:Connect(
     function()
+
+        if HubClosed then
+            return
+        end
 
         local PrefixText =
             Prefix.Text
@@ -2498,7 +2053,7 @@ MakeButton.MouseButton1Click:Connect(
                 "Command failed."
         end
     end
-)
+))
 
 --============================================================
 -- CLIENT CONTROLS
@@ -2508,18 +2063,10 @@ local ClientTitle =
     Instance.new("TextLabel")
 
 ClientTitle.Position =
-    UDim2.fromOffset(
-        8,
-        7
-    )
+    UDim2.fromOffset(8, 7)
 
 ClientTitle.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        22
-    )
+    UDim2.new(1, -16, 0, 22)
 
 ClientTitle.BackgroundTransparency =
     1
@@ -2528,11 +2075,7 @@ ClientTitle.Text =
     "Client Controls"
 
 ClientTitle.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 ClientTitle.Font =
     Enum.Font.SourceSansBold
@@ -2550,42 +2093,22 @@ local ClientStatus =
     Instance.new("TextLabel")
 
 ClientStatus.Position =
-    UDim2.fromOffset(
-        8,
-        34
-    )
+    UDim2.fromOffset(8, 34)
 
 ClientStatus.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        25
-    )
+    UDim2.new(1, -16, 0, 25)
 
 ClientStatus.BackgroundColor3 =
-    Color3.fromRGB(
-        20,
-        20,
-        20
-    )
+    Color3.fromRGB(20, 20, 20)
 
 ClientStatus.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 ClientStatus.Text =
     "Client controls ready."
 
 ClientStatus.TextColor3 =
-    Color3.fromRGB(
-        190,
-        190,
-        190
-    )
+    Color3.fromRGB(190, 190, 190)
 
 ClientStatus.Font =
     Enum.Font.SourceSans
@@ -2600,42 +2123,22 @@ local MeshButton =
     Instance.new("TextButton")
 
 MeshButton.Position =
-    UDim2.fromOffset(
-        8,
-        68
-    )
+    UDim2.fromOffset(8, 68)
 
 MeshButton.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        37
-    )
+    UDim2.new(1, -16, 0, 37)
 
 MeshButton.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 MeshButton.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 MeshButton.Text =
     "Mesh Hider: OFF"
 
 MeshButton.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 MeshButton.Font =
     Enum.Font.SourceSansBold
@@ -2650,42 +2153,22 @@ local PauseButton =
     Instance.new("TextButton")
 
 PauseButton.Position =
-    UDim2.fromOffset(
-        8,
-        112
-    )
+    UDim2.fromOffset(8, 112)
 
 PauseButton.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        37
-    )
+    UDim2.new(1, -16, 0, 37)
 
 PauseButton.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 PauseButton.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 PauseButton.Text =
     "Anti-Pause: OFF"
 
 PauseButton.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 PauseButton.Font =
     Enum.Font.SourceSansBold
@@ -2700,42 +2183,22 @@ local CButton =
     Instance.new("TextButton")
 
 CButton.Position =
-    UDim2.fromOffset(
-        8,
-        156
-    )
+    UDim2.fromOffset(8, 156)
 
 CButton.Size =
-    UDim2.new(
-        1,
-        -16,
-        0,
-        37
-    )
+    UDim2.new(1, -16, 0, 37)
 
 CButton.BackgroundColor3 =
-    Color3.fromRGB(
-        65,
-        65,
-        65
-    )
+    Color3.fromRGB(65, 65, 65)
 
 CButton.BorderColor3 =
-    Color3.fromRGB(
-        0,
-        0,
-        0
-    )
+    Color3.fromRGB(0, 0, 0)
 
 CButton.Text =
     "Wrench C Mover: OFF"
 
 CButton.TextColor3 =
-    Color3.new(
-        1,
-        1,
-        1
-    )
+    Color3.new(1, 1, 1)
 
 CButton.Font =
     Enum.Font.SourceSansBold
@@ -2758,6 +2221,10 @@ local originalTransparency = {}
 local trackedC = {}
 local originalCFrames = {}
 
+local pauseConnection
+local cFolderConnection
+local meshWatcherConnection
+
 local function IsMeshObject(Object)
 
     return Object:IsA("MeshPart")
@@ -2765,6 +2232,10 @@ local function IsMeshObject(Object)
 end
 
 local function HideMesh(Object)
+
+    if HubClosed then
+        return
+    end
 
     if Object:IsA("MeshPart") then
 
@@ -2814,12 +2285,14 @@ local function RestoreMeshes()
         end
     end
 
-    table.clear(
-        originalTransparency
-    )
+    table.clear(originalTransparency)
 end
 
 local function SetMeshEnabled(Value)
+
+    if HubClosed then
+        return
+    end
 
     MeshEnabled =
         Value
@@ -2857,40 +2330,39 @@ end
 
 local function SetPauseEnabled(Value)
 
+    if HubClosed then
+        return
+    end
+
     PauseEnabled =
         Value
 
     if pauseConnection then
 
         pauseConnection:Disconnect()
-
-        pauseConnection =
-            nil
+        pauseConnection = nil
     end
 
     if PauseEnabled then
 
         pcall(function()
-
-            LocalPlayer.GameplayPaused =
-                false
-
+            LocalPlayer.GameplayPaused = false
         end)
 
         pauseConnection =
             LocalPlayer:GetPropertyChangedSignal(
                 "GameplayPaused"
-            ):Connect(
-                function()
+            ):Connect(function()
 
-                    pcall(function()
-
-                        LocalPlayer.GameplayPaused =
-                            false
-
-                    end)
+                if HubClosed then
+                    return
                 end
-            )
+
+                pcall(function()
+                    LocalPlayer.GameplayPaused = false
+                end)
+
+            end)
 
         ClientStatus.Text =
             "Anti-Pause enabled."
@@ -2912,6 +2384,10 @@ end
 
 local function TrackC(Object)
 
+    if HubClosed then
+        return
+    end
+
     if not Object:IsA("BasePart") then
         return
     end
@@ -2931,6 +2407,10 @@ local function TrackC(Object)
 end
 
 local function ScanC()
+
+    if HubClosed then
+        return
+    end
 
     local Folder =
         workspace:FindFirstChild(
@@ -2971,9 +2451,7 @@ end
 
 local function RestoreC()
 
-    for Object in pairs(
-        trackedC
-    ) do
+    for Object in pairs(trackedC) do
 
         if Object
         and Object.Parent
@@ -2988,16 +2466,15 @@ local function RestoreC()
         end
     end
 
-    table.clear(
-        trackedC
-    )
-
-    table.clear(
-        originalCFrames
-    )
+    table.clear(trackedC)
+    table.clear(originalCFrames)
 end
 
 local function SetCEnabled(Value)
+
+    if HubClosed then
+        return
+    end
 
     CEnabled =
         Value
@@ -3005,9 +2482,7 @@ local function SetCEnabled(Value)
     if cFolderConnection then
 
         cFolderConnection:Disconnect()
-
-        cFolderConnection =
-            nil
+        cFolderConnection = nil
     end
 
     if CEnabled then
@@ -3025,7 +2500,15 @@ local function SetCEnabled(Value)
                 Folder.DescendantAdded:Connect(
                     function(Object)
 
+                        if HubClosed then
+                            return
+                        end
+
                         task.wait()
+
+                        if HubClosed then
+                            return
+                        end
 
                         if Object:IsA("BasePart")
                         and Object.Name:lower() == "c" then
@@ -3076,7 +2559,7 @@ end
 -- CLIENT BUTTONS
 --============================================================
 
-MeshButton.MouseButton1Click:Connect(
+AddConnection(MeshButton.MouseButton1Click:Connect(
     function()
 
         SetMeshEnabled(
@@ -3084,9 +2567,9 @@ MeshButton.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
-PauseButton.MouseButton1Click:Connect(
+AddConnection(PauseButton.MouseButton1Click:Connect(
     function()
 
         SetPauseEnabled(
@@ -3094,9 +2577,9 @@ PauseButton.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
-CButton.MouseButton1Click:Connect(
+AddConnection(CButton.MouseButton1Click:Connect(
     function()
 
         SetCEnabled(
@@ -3104,13 +2587,13 @@ CButton.MouseButton1Click:Connect(
         )
 
     end
-)
+))
 
 --============================================================
 -- MESH WATCHER
 --============================================================
 
-MeshWatcherConnection =
+meshWatcherConnection =
     workspace.DescendantAdded:Connect(
         function(Object)
 
@@ -3123,148 +2606,103 @@ MeshWatcherConnection =
 
                 task.wait()
 
-                if not HubClosed
-                and MeshEnabled then
-
-                    HideMesh(Object)
+                if HubClosed then
+                    return
                 end
+
+                HideMesh(Object)
             end
         end
     )
 
+AddConnection(meshWatcherConnection)
+
 --============================================================
--- CLEANUP
+-- CLOSE / COMPLETE SHUTDOWN
 --============================================================
 
-CleanupHub =
-    function()
+local function ShutdownHub()
 
-        if HubClosed then
-            return
-        end
+    if HubClosed then
+        return
+    end
 
-        HubClosed =
-            true
+    HubClosed =
+        true
 
-        --====================================================
-        -- STOP TOOL AUTO-TP
-        --====================================================
+    -- STOP TOOL AUTO TP
+    WrenchRow.AutoEnabled = false
+    BuildingRow.AutoEnabled = false
+    ForkRow.AutoEnabled = false
+    BucketRow.AutoEnabled = false
 
-        for _, Data in ipairs(
-            ToolRows
-        ) do
+    WrenchRow.Auto.Text = "AUTO OFF"
+    BuildingRow.Auto.Text = "AUTO OFF"
+    ForkRow.Auto.Text = "AUTO OFF"
+    BucketRow.Auto.Text = "AUTO OFF"
 
-            Data.Row.AutoEnabled =
-                false
+    -- STOP ADMIN AUTO TP
+    for i = 1, MAX_ADMIN_PADS do
 
-            Data.Row.Auto.Text =
-                "AUTO: OFF"
-        end
+        local Data =
+            AdminRows[i]
 
-        --====================================================
-        -- STOP ADMIN AUTO-TP
-        --====================================================
-
-        for i = 1, MAX_ADMIN_PADS do
-
-            local Data =
-                AdminRows[i]
-
-            Data.AutoEnabled =
-                false
-
-            Data.Auto.Text =
-                "OFF"
-        end
-
-        --====================================================
-        -- STOP ANTI-PAUSE
-        --====================================================
-
-        PauseEnabled =
+        Data.AutoEnabled =
             false
 
-        if pauseConnection then
+        Data.Auto.Text =
+            "OFF"
+    end
 
+    -- STOP CLIENT SYSTEMS
+    MeshEnabled = false
+    PauseEnabled = false
+    CEnabled = false
+
+    -- DISCONNECT SPECIAL CONNECTIONS
+    if pauseConnection then
+        pcall(function()
             pauseConnection:Disconnect()
+        end)
+        pauseConnection = nil
+    end
 
-            pauseConnection =
-                nil
-        end
-
-        --====================================================
-        -- STOP C MOVER
-        --====================================================
-
-        CEnabled =
-            false
-
-        if cFolderConnection then
-
+    if cFolderConnection then
+        pcall(function()
             cFolderConnection:Disconnect()
+        end)
+        cFolderConnection = nil
+    end
 
-            cFolderConnection =
-                nil
-        end
+    if meshWatcherConnection then
+        pcall(function()
+            meshWatcherConnection:Disconnect()
+        end)
+        meshWatcherConnection = nil
+    end
 
-        RestoreC()
+    -- RESTORE MESHES
+    RestoreMeshes()
 
-        --====================================================
-        -- RESTORE MESHES
-        --====================================================
+    -- RESTORE C PARTS
+    RestoreC()
 
-        MeshEnabled =
-            false
+    -- DISCONNECT EVERYTHING
+    DisconnectAll()
 
-        RestoreMeshes()
-
-        --====================================================
-        -- DISCONNECT MAIN LOOP
-        --====================================================
-
-        if MainLoopConnection then
-
-            MainLoopConnection:Disconnect()
-
-            MainLoopConnection =
-                nil
-        end
-
-        --====================================================
-        -- DISCONNECT MESH WATCHER
-        --====================================================
-
-        if MeshWatcherConnection then
-
-            MeshWatcherConnection:Disconnect()
-
-            MeshWatcherConnection =
-                nil
-        end
-
-        --====================================================
-        -- DESTROY GUI
-        --====================================================
-
-        if ScreenGui then
-
+    -- DESTROY GUI
+    if ScreenGui then
+        pcall(function()
             ScreenGui:Destroy()
-        end
+        end)
     end
+end
 
---============================================================
--- CLOSE BUTTON
---============================================================
-
-Close.MouseButton1Click:Connect(
+AddConnection(Close.MouseButton1Click:Connect(
     function()
-
-        if CleanupHub then
-            CleanupHub()
-        end
-
+        ShutdownHub()
     end
-)
+))
 
 --============================================================
 -- MAIN LOOP
@@ -3273,7 +2711,7 @@ Close.MouseButton1Click:Connect(
 local LastAdminRefresh = 0
 local LastToolRefresh = 0
 
-MainLoopConnection =
+AddConnection(
     RunService.Heartbeat:Connect(
         function()
 
@@ -3309,6 +2747,74 @@ MainLoopConnection =
             end
 
             --================================================
+            -- TOOL AUTO-TP
+            --================================================
+
+            local ToolAutoRows = {
+                {
+                    Data = WrenchRow,
+                    Name = WRENCH_NAME,
+                    Label = "Super Cool Wrench"
+                },
+                {
+                    Data = BuildingRow,
+                    Name = BUILDING_NAME,
+                    Label = "Building Tools"
+                },
+                {
+                    Data = ForkRow,
+                    Name = FORK3X_NAME,
+                    Label = "Fork3X"
+                }
+            }
+
+            for _, Info in ipairs(ToolAutoRows) do
+
+                local Data =
+                    Info.Data
+
+                if Data.AutoEnabled
+                and Now - Data.LastTP >= 0.35 then
+
+                    Data.LastTP =
+                        Now
+
+                    local Tool =
+                        GetTool(Info.Name)
+
+                    if Tool then
+
+                        TeleportToolToPlayer(
+                            Tool,
+                            Info.Label
+                        )
+                    end
+                end
+            end
+
+            --================================================
+            -- BLUE BUCKET AUTO
+            --================================================
+
+            if BucketRow.AutoEnabled
+            and Now - BucketRow.LastTP >= 1 then
+
+                BucketRow.LastTP =
+                    Now
+
+                local Bucket =
+                    GetTool("Blue Bucket")
+
+                if Bucket then
+
+                    TeleportToolToPlayer(
+                        Bucket,
+                        "Blue Bucket"
+                    )
+                end
+            end
+
+            --================================================
             -- ADMIN AUTO TP
             --================================================
 
@@ -3331,61 +2837,6 @@ MainLoopConnection =
             end
 
             --================================================
-            -- TOOL AUTO TP
-            --================================================
-
-            for _, Data in ipairs(
-                ToolRows
-            ) do
-
-                if Data.Row.AutoEnabled
-                and Now - Data.Row.LastTP
-                    >= TOOL_AUTO_INTERVAL then
-
-                    Data.Row.LastTP =
-                        Now
-
-                    local Tool =
-                        GetTool(
-                            Data.ToolName
-                        )
-
-                    if Tool then
-
-                        TeleportToolToPlayer(
-                            Tool,
-                            Data.Label
-                        )
-
-                    elseif Data.ToolName
-                        == BUCKET_NAME then
-
-                        --====================================
-                        -- BLUE BUCKET AUTO REQUEST
-                        --====================================
-
-                        if RequestCommand
-                        and Now - Data.Row.LastRequest
-                            >= BUCKET_REQUEST_INTERVAL then
-
-                            Data.Row.LastRequest =
-                                Now
-
-                            pcall(function()
-
-                                RequestCommand:InvokeServer(
-                                    ";gear me " ..
-                                    BUCKET_ID ..
-                                    ".1"
-                                )
-
-                            end)
-                        end
-                    end
-                end
-            end
-
-            --================================================
             -- MESH SELF HEAL
             --================================================
 
@@ -3394,6 +2845,10 @@ MainLoopConnection =
                 for _, Object in ipairs(
                     workspace:GetDescendants()
                 ) do
+
+                    if HubClosed then
+                        return
+                    end
 
                     if IsMeshObject(Object) then
                         HideMesh(Object)
@@ -3424,6 +2879,7 @@ MainLoopConnection =
             end
         end
     )
+)
 
 --============================================================
 -- START
@@ -3437,6 +2893,33 @@ RefreshAdminPads()
 
 UpdateToolAvailability()
 
-SetMeshEnabled(false)
-SetPauseEnabled(false)
-SetCEnabled(false)
+-- Start OFF without running unnecessary systems
+MeshEnabled = false
+PauseEnabled = false
+CEnabled = false
+
+MeshButton.Text =
+    "Mesh Hider: OFF"
+
+PauseButton.Text =
+    "Anti-Pause: OFF"
+
+CButton.Text =
+    "Wrench C Mover: OFF"
+
+WrenchRow.Auto.Text =
+    "AUTO OFF"
+
+BuildingRow.Auto.Text =
+    "AUTO OFF"
+
+ForkRow.Auto.Text =
+    "AUTO OFF"
+
+BucketRow.Auto.Text =
+    "AUTO OFF"
+
+for i = 1, MAX_ADMIN_PADS do
+    AdminRows[i].Auto.Text =
+        "OFF"
+end
